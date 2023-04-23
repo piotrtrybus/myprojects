@@ -1,0 +1,75 @@
+WITH full_table AS (
+SELECT
+individual.CustomerID customer_id,
+contact.FirstName first_name,
+contact.LastName last_name,
+CONCAT(contact.FirstName, ' ', contact.LastName) full_name,
+CASE
+WHEN contact.Title IS NULL THEN CONCAT('Dear', ' ', contact.LastName)
+ELSE
+CONCAT(contact.Title,' ', contact.LastName)
+END
+addressing_title,
+contact.EmailAddress,
+contact.Phone,
+customer.AccountNumber,
+customer.CustomerType,
+address.City,
+state_province.Name state_province_name,
+LEFT(address.AddressLine1,4) address_no,
+RIGHT(address.AddressLine1,LENGTH(address.AddressLine1) - 4) street,
+country_region.Name country_name,
+sales_order_header.TotalDue total_sales_plus_tax,
+last_order_table.last_order_date last_order_date,
+CASE
+WHEN
+DATE_DIFF ((SELECT MAX(OrderDate) FROM `tc-da-1.adwentureworks_db.salesorderheader`),MAX(sales_order_header.OrderDate), day)
+>= 365
+THEN 'Inactive' ELSE 'Active' END AS is_active
+FROM `tc-da-1.adwentureworks_db.individual` AS individual
+JOIN `tc-da-1.adwentureworks_db.contact` AS contact ON individual.ContactID = contact.ContactID
+JOIN `tc-da-1.adwentureworks_db.customer` AS customer ON individual.CustomerID = customer.CustomerID
+JOIN `tc-da-1.adwentureworks_db.customeraddress` AS customer_address ON customer.CustomerID = customer_address.CustomerID
+JOIN `tc-da-1.adwentureworks_db.address` AS address ON customer_address.AddressID = address.AddressID
+JOIN `tc-da-1.adwentureworks_db.stateprovince` AS state_province ON address.StateProvinceID = state_province.StateProvinceID
+JOIN `tc-da-1.adwentureworks_db.salesorderheader` AS sales_order_header ON customer.CustomerID = sales_order_header.CustomerID
+JOIN `tc-da-1.adwentureworks_db.countryregion` AS country_region
+ON state_province.CountryRegionCode = country_region.CountryRegionCode
+JOIN (
+
+SELECT
+DISTINCT sales_order_header.CustomerID customer_id,
+MAX(sales_order_header.OrderDate) last_order_date
+FROM `tc-da-1.adwentureworks_db.salesorderheader` sales_order_header
+
+GROUP BY sales_order_header.CustomerID
+
+) last_order_table ON last_order_table.customer_id = sales_order_header.CustomerID
+
+GROUP BY 1, 2,3,4,5,6,7,8,9,10,11,12,13,14,15,16
+ORDER BY 1 DESC
+),
+
+customer_orders AS (
+
+SELECT
+customer.CustomerId customer_id,
+COUNT(sales_order_header.SalesOrderId) order_count
+FROM `adwentureworks_db.salesorderheader` sales_order_header
+JOIN `adwentureworks_db.customer` AS customer
+ON sales_order_header.CustomerId = customer.CustomerID
+GROUP BY
+1
+)
+
+SELECT
+*
+FROM full_table
+JOIN customer_orders ON full_table.customer_id = customer_orders.customer_id
+WHERE
+full_table.is_active = 'Active'
+AND
+full_table.country_name IN('United States','Canada','Mexico')
+AND
+(customer_orders.order_count > 5 OR full_table.total_sales_plus_tax >= 2500)
+ORDER BY full_table.country_name, full_table.last_order_date, full_table.state_province_name
